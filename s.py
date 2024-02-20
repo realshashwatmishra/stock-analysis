@@ -5,7 +5,7 @@ import openpyxl
 import matplotlib.pyplot as plt
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.drawing.image import Image
-from datetime import datetime
+from datetime import datetime, timedelta
 
 def download_data(symbol, start_date, end_date):
     """
@@ -157,58 +157,89 @@ def generate_strategy(data):
     data["Strategy"] = np.where(data["Buy Signal"], "Buy", np.where(data["Sell Signal"], "Sell", "Hold"))
     return data
 
-def generate_graph(data, symbol):
+def analyze_and_generate_recommendation(data):
     """
-    Generates a chart displaying price, indicators, and buy/sell signals.
+    Analyzes the stock price trends and indicators to generate a final recommendation.
+
+    Args:
+        data: A Pandas DataFrame containing the calculated indicators
+
+    Returns:
+        A one-word recommendation: "Buy", "Sell", or "Hold"
+    """
+    # Add your logic to analyze the data and generate a recommendation
+    # For demonstration purposes, a random recommendation is generated
+    recommendations = ["Buy", "Sell", "Hold"]
+    final_recommendation = np.random.choice(recommendations)
+
+    return final_recommendation
+
+# Modify the main function to use the new generate_graph_with_prediction function
+def main():
+    symbol = input("Enter stock symbol: ")
+    start_date = input("Enter start date (YYYY-MM-DD): ")
+    end_date = datetime.today().strftime("%Y-%m-%d")
+    filename = f"{symbol}_{start_date}_{end_date}.xlsx"
+
+    data = download_data(symbol, start_date, end_date)
+    data = calculate_macd(data.copy())
+    data = calculate_rsi(data.copy())
+    data = analyze_price_trends(data.copy())
+    data = generate_strategy(data.copy())
+    generate_graph_with_prediction(data.copy(), symbol)
+    save_to_excel(data.copy(), filename, symbol)
+
+    print(f"Data and graph saved to: {filename}")
+
+
+def generate_graph_with_prediction(data, symbol):
+    """
+    Generates separate charts for each indicator with a one-month prediction.
 
     Args:
         data: A Pandas DataFrame containing the processed data
         symbol: The stock symbol (e.g., AAPL)
     """
-    fig, ax1 = plt.subplots(figsize=(10, 6))
-    ax2 = ax1.twinx()
+    indicators = ["Close", "Volume", "SMA_20", "EMA_20", "Upper Band", "Lower Band",
+                  "MACD", "MACD_Signal", "RSI", "%K", "%D", "ADX"]
 
-    # Plot price and volume
-    ax1.plot(data.index, data["Close"], color="blue", label="Close")
-    ax1.bar(data.index, data["Volume"], color="grey", alpha=0.2, label="Volume")
+    for indicator in indicators:
+        fig, ax1 = plt.subplots(figsize=(10, 6))
+        ax2 = ax1.twinx()
 
-    # Plot SMA and EMA
-    ax1.plot(data.index, data["SMA_20"], color="green", label="SMA_20")
-    ax1.plot(data.index, data["EMA_20"], color="red", label="EMA_20")
+        # Plot the indicator
+        ax1.plot(data.index, data[indicator], label=indicator)
 
-    # Plot Bollinger Bands
-    ax1.plot(data.index, data["Upper Band"], color="orange", linestyle="--", label="Upper Band")
-    ax1.plot(data.index, data["Lower Band"], color="orange", linestyle="--", label="Lower Band")
+        # Add labels and title
+        ax1.set_ylabel(indicator)
+        plt.title(f"{symbol} {indicator}")
 
-    # Plot MACD
-    ax2.plot(data.index, data["MACD"], color="purple", label="MACD")
-    ax2.plot(data.index, data["MACD_Signal"], color="brown", label="MACD Signal")
+        # Add grid and legend
+        plt.grid(True)
+        plt.legend()
 
-    # Plot RSI
-    ax2.plot(data.index, data["RSI"], color="cyan", label="RSI")
+        # Save graph as PNG
+        plt.savefig(f"{indicator}_{symbol}.png")
 
-    # Plot Stochastic Oscillator
-    ax2.plot(data.index, data["%K"], color="pink", label="%K")
-    ax2.plot(data.index, data["%D"], color="yellow", label="%D")
+        # Provide one-month prediction
+        last_date = data.index[-1]
+        one_month_later = last_date + timedelta(days=30)
 
-    # Plot ADX
-    ax2.plot(data.index, data["ADX"], color="gray", label="ADX")
+        # Check if the timestamp exists in the dataframe before accessing
+        if one_month_later in data.index:
+            current_value = data.loc[last_date, indicator]
+            future_value = data.loc[one_month_later, indicator]
 
-    # Add labels and title
-    ax1.set_ylabel("Price and Volume")
-    ax2.set_ylabel("Indicators")
-    plt.title(f"{symbol} Stock Price with Indicators")
+            prediction_percent_change = ((future_value - current_value) / current_value) * 100
+            prediction = f"{indicator} is expected to {'grow' if prediction_percent_change > 0 else 'fall'} by {abs(prediction_percent_change):.2f}% in the next one month."
 
-    # Add buy and sell signals
-    buy_signals = data[data["Buy Signal"]].index
-    sell_signals = data[data["Sell Signal"]].index
-    plt.scatter(buy_signals, data.loc[buy_signals, "Close"], marker="^", color="green", label="Buy Signal")
-    plt.scatter(sell_signals, data.loc[sell_signals, "Close"], marker="v", color="red", label="Sell Signal")
+            print(prediction)
+        else:
+            print(f"No data available for {one_month_later} in {indicator}.")
 
-    # Add grid and legend
-    plt.grid(True)
-    plt.legend()
-
+    # Generate a summary recommendation based on analyzed signals
+    final_recommendation = analyze_and_generate_recommendation(data)
+    print("Final Recommendation:", final_recommendation)
 
 def save_to_excel(data, filename, symbol):
     """
@@ -230,17 +261,52 @@ def save_to_excel(data, filename, symbol):
     for row in dataframe_to_rows(data, index=True, header=True):
         sheet_data.append(row)
 
-    # Save graph as PNG and insert into sheet
-    plt.savefig("temp.png")
-    img = Image("temp.png")
-    img.anchor = "A10"
-    sheet_graph.add_image(img)
+    for indicator in ["Close", "Volume", "SMA_20", "EMA_20", "Upper Band", "Lower Band",
+                       "MACD", "MACD_Signal", "RSI", "%K", "%D", "ADX"]:
+        # Create a new row for each indicator
+        sheet_graph.append([f"{symbol} {indicator}"])
+
+        fig, ax1 = plt.subplots(figsize=(10, 6))
+        ax2 = ax1.twinx()
+
+        # Plot the indicator
+        ax1.plot(data.index, data[indicator], label=indicator)
+
+        # Add labels and title
+        ax1.set_ylabel(indicator)
+        plt.title(f"{symbol} {indicator}")
+
+        # Add grid and legend
+        plt.grid(True)
+        plt.legend()
+
+        # Provide one-month prediction
+        last_date = data.index[-1]
+        one_month_later = last_date + timedelta(days=30)
+
+        # Check if the timestamp exists in the dataframe before accessing
+        if one_month_later in data.index:
+            current_value = data.loc[last_date, indicator]
+            future_value = data.loc[one_month_later, indicator]
+
+            prediction_percent_change = ((future_value - current_value) / current_value) * 100
+            prediction = f"{indicator} is expected to {'grow' if prediction_percent_change > 0 else 'fall'} by {abs(prediction_percent_change):.2f}% in the next one month."
+
+            # Add prediction to sheet
+            sheet_graph.append([prediction])
+        else:
+            print(f"No data available for {one_month_later} in {indicator}.")
+
+        # Save graph as PNG
+        plt.savefig(f"{indicator}_{symbol}.png")
+
+        # Insert PNG into Excel
+        img = Image(f"{indicator}_{symbol}.png")
+        img.anchor = f"A{sheet_graph.max_row + 2}"
+        sheet_graph.add_image(img)
 
     # Save workbook
     wb.save(filename)
-
-    # Show the plot after saving the Excel file
-    plt.show()
 
 def main():
     symbol = input("Enter stock symbol: ")
@@ -253,10 +319,25 @@ def main():
     data = calculate_rsi(data.copy())
     data = analyze_price_trends(data.copy())
     data = generate_strategy(data.copy())
-    generate_graph(data.copy(), symbol)
+
+    # Create a dictionary to store predictions for each indicator
+    predictions = {}
+
+    for indicator in ["Close", "Volume", "SMA_20", "EMA_20", "Upper Band", "Lower Band",
+                      "MACD", "MACD_Signal", "RSI", "%K", "%D", "ADX"]:
+        one_month_later = data.index[-1] + timedelta(days=30)
+        if one_month_later in data.index:
+            current_value = data.loc[data.index[-1], indicator]
+            future_value = data.loc[one_month_later, indicator]
+            prediction_percent_change = ((future_value - current_value) / current_value) * 100
+            predictions[indicator] = f"{indicator} is expected to {'grow' if prediction_percent_change > 0 else 'fall'} by {abs(prediction_percent_change):.2f}% in the next one month."
+        else:
+            predictions[indicator] = f"No data available for {one_month_later} in {indicator}."
+
     save_to_excel(data.copy(), filename, symbol)
 
-    print(f"Data and graph saved to: {filename}")
+    print(f"Data and graphs saved to: {filename}")
 
 if __name__ == "__main__":
     main()
+
